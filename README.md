@@ -60,7 +60,7 @@ function Swap() {
 ## API
 
 - **`<AsentumProvider>`** — `rpc?`, `telegramBot?`, `onCreateWallet?`, `onConnect?`, `onDisconnect?`, `persist?`.
-- **`<ConnectButton>`** — the drop-in; renders the modal automatically.
+- **`<ConnectButton>`** — the button; renders the modal automatically.
 - **`useWallet()`** → `{ address, connected, connecting, error, hasWallet, connect, disconnect, openConnect }`.
 - **`useAsentum()`** → `AsentumClient` (`view`, `call`, `transfer`, `deploy`, `waitReceipt`, `balanceOf`).
 - **`useContract(addr)`** → `{ view(method,args), call(method,args,value) }`.
