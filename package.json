@@ -1,10 +1,20 @@
 {
   "name": "@asentum/connect",
   "version": "0.1.0",
-  "description": "Drop-in wallet connect for AsentumChain dapps — <ConnectButton /> + hooks (useWallet, useAsentum). Zero CSS imports, zero heavy deps.",
+  "description": "Drop-in wallet connect for AsentumChain dapps \u2014 <ConnectButton /> + hooks (useWallet, useAsentum). Zero CSS imports, zero heavy deps.",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/asentum-network/asentum-connect" },
-  "keywords": ["asentum", "wallet", "web3", "react", "connect", "dapp"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asentum-network/asentum-connect"
+  },
+  "keywords": [
+    "asentum",
+    "wallet",
+    "web3",
+    "react",
+    "connect",
+    "dapp"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,7 +26,11 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
@@ -33,5 +47,8 @@
     "react-dom": "^18.3.1",
     "tsup": "^8.2.4",
     "typescript": "^5.5.4"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
