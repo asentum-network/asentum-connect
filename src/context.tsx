@@ -13,7 +13,11 @@ export interface AsentumContextValue extends WalletState {
   _closeModal: () => void;
   _modalOpen: boolean;
   telegramBot?: string;
+  dappName?: string;
   onCreateWallet?: () => void | Promise<void>;
+  // finalize a paired Telegram-bot session (called by the modal's code flow)
+  _connectBot: (p: { address: string; sessionId: string }) => void;
+  _setError: (msg: string | null) => void;
 }
 
 const Ctx = createContext<AsentumContextValue | null>(null);
@@ -24,6 +28,10 @@ export interface AsentumProviderProps {
   rpc?: string;
   // bot username without @; when set the modal shows the Telegram option
   telegramBot?: string;
+  // Telegram-bot wallet API base (default https://wallet.asentum.com)
+  botApi?: string;
+  // name shown in the wallet's approval prompt
+  dappName?: string;
   // when set the modal shows the create-new option
   onCreateWallet?: () => void | Promise<void>;
   onConnect?: (address: string) => void;
@@ -33,9 +41,9 @@ export interface AsentumProviderProps {
 }
 
 export function AsentumProvider({
-  children, rpc, telegramBot, onCreateWallet, onConnect, onDisconnect, persist = true,
+  children, rpc, telegramBot, botApi, dappName, onCreateWallet, onConnect, onDisconnect, persist = true,
 }: AsentumProviderProps) {
-  const client = useMemo(() => new AsentumClient({ rpc }), [rpc]);
+  const client = useMemo(() => new AsentumClient({ rpc, botApi }), [rpc, botApi]);
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,12 +53,22 @@ export function AsentumProvider({
   onConnectRef.current = onConnect;
   onDisconnectRef.current = onDisconnect;
 
-  // rehydrate a previously-connected address
+  // rehydrate a previously-connected wallet (address + method + bot session)
   useEffect(() => {
     if (!persist || typeof window === 'undefined') return;
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved) setAddress(saved);
-  }, [persist]);
+    if (!saved) return;
+    try {
+      const s = JSON.parse(saved);
+      if (s && s.address) {
+        setAddress(s.address);
+        if (s.method === 'bot' && s.sessionId) client.useBotSession(s.sessionId);
+      }
+    } catch {
+      // legacy: bare address string
+      setAddress(saved);
+    }
+  }, [persist, client]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -58,7 +76,7 @@ export function AsentumProvider({
     try {
       const addr = await client.connect();
       setAddress(addr);
-      if (persist && typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, addr);
+      if (persist && typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ address: addr, method: 'extension' }));
       onConnectRef.current?.(addr);
       setModalOpen(false);
       return addr;
@@ -77,6 +95,19 @@ export function AsentumProvider({
     onDisconnectRef.current?.();
   }, [client, persist]);
 
+  // Finalize a paired Telegram-bot session: the modal's code flow calls this
+  // once getBotSessionStatus returns { status:'connected', address }.
+  const connectBot = useCallback((p: { address: string; sessionId: string }) => {
+    client.useBotSession(p.sessionId);
+    setAddress(p.address);
+    setError(null);
+    if (persist && typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ address: p.address, method: 'bot', sessionId: p.sessionId }));
+    }
+    onConnectRef.current?.(p.address);
+    setModalOpen(false);
+  }, [client, persist]);
+
   const value: AsentumContextValue = {
     client,
     address,
@@ -87,7 +118,10 @@ export function AsentumProvider({
     connect,
     disconnect,
     telegramBot,
+    dappName,
     onCreateWallet,
+    _connectBot: connectBot,
+    _setError: setError,
     _openModal: () => setModalOpen(true),
     _closeModal: () => setModalOpen(false),
     _modalOpen: modalOpen,

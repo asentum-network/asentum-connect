@@ -18,6 +18,8 @@ declare global {
 export interface ClientOptions {
   /** Public RPC base for read-only /view + /balance calls. */
   rpc?: string;
+  /** Telegram-bot wallet API base (default https://wallet.asentum.com). */
+  botApi?: string;
 }
 
 export interface Receipt {

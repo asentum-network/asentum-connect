@@ -1,34 +1,77 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAsentumContext } from './context';
 
 export function ConnectModal() {
   const c = useAsentumContext();
+  const [view, setView] = useState<'options' | 'code'>('options');
+  const [code, setCode] = useState('------');
+  const [ttl, setTtl] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ttlRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopTimers = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (ttlRef.current) clearInterval(ttlRef.current);
+    pollRef.current = null;
+    ttlRef.current = null;
+  };
+  useEffect(() => () => stopTimers(), []);
+
+  const close = () => { stopTimers(); setView('options'); c._setError(null); c._closeModal(); };
+
+  // ── Telegram code flow: create session, show code, poll for approval ──
+  async function startCode() {
+    setView('code');
+    c._setError(null);
+    setCode('------');
+    setTtl('');
+    try {
+      const data = await c.client.createBotSession(c.dappName);
+      setCode(data.code);
+      const expires = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 5 * 60_000;
+      const tick = () => {
+        const ms = expires - Date.now();
+        if (ms <= 0) { stopTimers(); setTtl('expired'); c._setError('Code expired — go back and try again.'); return; }
+        const s = Math.floor(ms / 1000);
+        setTtl(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+      };
+      tick();
+      ttlRef.current = setInterval(tick, 1000);
+      pollRef.current = setInterval(async () => {
+        try {
+          const s = await c.client.getBotSessionStatus(data.sessionId);
+          if (s.status === 'connected' && s.address) {
+            stopTimers();
+            c._connectBot({ address: s.address, sessionId: data.sessionId });
+            setView('options');
+          } else if (s.status === 'rejected') { stopTimers(); c._setError('Connection rejected in the wallet.'); }
+          else if (s.status === 'expired') { stopTimers(); c._setError('Session expired — try again.'); }
+        } catch { /* transient — keep polling */ }
+      }, 2000);
+    } catch (e: any) {
+      c._setError(e?.message || 'Could not start pairing.');
+    }
+  }
+
   if (!c._modalOpen) return null;
 
   const options: { key: string; title: string; sub: string; cta: string; onClick: () => void }[] = [];
-
-  // extension: always shown, links to install if missing
   options.push({
     key: 'extension',
     title: c.hasWallet ? 'Browser extension' : 'Install the Asentum extension',
     sub: c.hasWallet ? 'Use the wallet you already have installed' : 'Get the extension, then reconnect',
     cta: c.hasWallet ? 'Connect' : 'Get it',
-    onClick: () => {
-      if (c.hasWallet) c.connect();
-      else window.open('https://www.asentum.com/download', '_blank', 'noopener');
-    },
+    onClick: () => { if (c.hasWallet) c.connect(); else window.open('https://www.asentum.com/download', '_blank', 'noopener'); },
   });
-
   if (c.telegramBot) {
     options.push({
       key: 'telegram',
-      title: 'Telegram bot',
-      sub: `Opens @${c.telegramBot} to link your wallet`,
-      cta: 'Open',
-      onClick: () => window.open(`https://t.me/${c.telegramBot}?start=link`, '_blank', 'noopener'),
+      title: 'Telegram wallet',
+      sub: 'Pair with a 6-digit code — no app switch',
+      cta: 'Pair',
+      onClick: startCode,
     });
   }
-
   if (c.onCreateWallet) {
     options.push({
       key: 'create',
@@ -40,30 +83,42 @@ export function ConnectModal() {
   }
 
   return (
-    <div style={S.overlay} onClick={c._closeModal}>
+    <div style={S.overlay} onClick={close}>
       <div style={S.modal} onClick={(e) => e.stopPropagation()}>
         <div style={S.head}>
           <div>
             <div style={S.eyebrow}>· Connect wallet</div>
-            <div style={S.title}>Connect to Asentum</div>
+            <div style={S.title}>{view === 'code' ? 'Pair Telegram wallet' : 'Connect to Asentum'}</div>
           </div>
-          <button aria-label="close" style={S.close} onClick={c._closeModal}>✕</button>
+          <button aria-label="close" style={S.close} onClick={close}>✕</button>
         </div>
 
-        <div style={S.body}>
-          {options.map((o) => (
-            <button key={o.key} style={S.option} onClick={o.onClick}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3a3a3a')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#232323')}>
-              <div style={S.optText}>
-                <div style={S.optTitle}>{o.title}</div>
-                <div style={S.optSub}>{o.sub}</div>
-              </div>
-              <span style={S.optCta}>{o.cta}</span>
-            </button>
-          ))}
-          {c.error && <div style={S.err}>{c.error}</div>}
-        </div>
+        {view === 'options' ? (
+          <div style={S.body}>
+            {options.map((o) => (
+              <button key={o.key} style={S.option} onClick={o.onClick}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3a3a3a')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#232323')}>
+                <div style={S.optText}>
+                  <div style={S.optTitle}>{o.title}</div>
+                  <div style={S.optSub}>{o.sub}</div>
+                </div>
+                <span style={S.optCta}>{o.cta}</span>
+              </button>
+            ))}
+            {c.error && <div style={S.err}>{c.error}</div>}
+          </div>
+        ) : (
+          <div style={S.body}>
+            <div style={S.steps}>
+              Open your <b>Telegram wallet</b> → tap <b>Connect</b> → enter this code:
+            </div>
+            <div style={S.code}>{code.split('').map((ch, i) => <span key={i} style={S.digit}>{ch}</span>)}</div>
+            <div style={S.ttl}>{ttl === 'expired' ? 'Expired' : ttl ? `Expires in ${ttl}` : 'Waiting for wallet…'}</div>
+            {c.error && <div style={S.err}>{c.error}</div>}
+            <button style={S.back} onClick={() => { stopTimers(); c._setError(null); setView('options'); }}>← Back</button>
+          </div>
+        )}
 
         <div style={S.foot}>We only read on-chain activity and request signatures — never custody your keys.</div>
       </div>
@@ -88,5 +143,11 @@ const S: Record<string, React.CSSProperties> = {
   optSub: { fontSize: 12, color: '#8a8a92', marginTop: 3 },
   optCta: { fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: '#b7a8ff', fontWeight: 700 },
   err: { fontSize: 12, color: '#ff9db0', padding: '4px 2px' },
+  steps: { fontSize: 13, color: '#b7b7bf', lineHeight: 1.5, textAlign: 'center' },
+  code: { display: 'flex', justifyContent: 'center', gap: 8, margin: '6px 0' },
+  digit: { width: 40, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700,
+    fontVariantNumeric: 'tabular-nums', background: '#111114', border: '1px solid #2a2a2a', borderRadius: 10, color: '#fff' },
+  ttl: { fontSize: 12, color: '#8a8a92', textAlign: 'center' },
+  back: { background: 'transparent', border: '1px solid #232323', color: '#9a9aa2', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontSize: 13, alignSelf: 'flex-start' },
   foot: { padding: '12px 16px', borderTop: '1px solid #1c1c1c', fontSize: 11, color: '#6a6a72', background: '#060608' },
 };

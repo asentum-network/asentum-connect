@@ -1,14 +1,82 @@
 import type { AsentumProviderApi, ClientOptions, Receipt } from './types';
 
 export const DEFAULT_RPC = 'https://testnet.asentum.com';
+export const DEFAULT_BOT_API = 'https://wallet.asentum.com';
 
-// Reads hit the public RPC directly. Writes go through the extension
-// (window.asentum), which prompts the user to sign.
+export interface BotSession {
+  sessionId: string;
+  code: string;
+  expiresAt?: number;
+}
+
+// Reads hit the public RPC directly. Writes go through the active signer:
+// either the browser extension (window.asentum) or a paired Telegram-bot
+// session (the 6-digit-code flow), which posts a sign-request the user
+// approves inside their Telegram wallet.
 export class AsentumClient {
   readonly rpc: string;
+  readonly botApi: string;
+  // active signer: 'extension' | 'bot' | null. Bot mode is set via
+  // useBotSession() after the code is paired.
+  private mode: 'extension' | 'bot' | null = null;
+  private botSessionId: string | null = null;
 
   constructor(opts: ClientOptions = {}) {
     this.rpc = opts.rpc || DEFAULT_RPC;
+    this.botApi = opts.botApi || DEFAULT_BOT_API;
+  }
+
+  // ── Telegram-bot session (6-digit code pairing) ─────────────────────────
+  // Create a pairing session; show the returned `code` to the user, who
+  // enters it in their Telegram wallet's Connect flow.
+  async createBotSession(dappName?: string): Promise<BotSession> {
+    const res = await fetch(`${this.botApi}/api/sessions/create`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        dappOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+        dappName: dappName || 'Asentum',
+      }),
+    });
+    if (!res.ok) throw new Error(`bot session create failed: HTTP ${res.status}`);
+    return res.json();
+  }
+
+  // Poll this until { status: 'connected', address } once the user enters
+  // the code in their wallet.
+  async getBotSessionStatus(sessionId: string): Promise<{ status: string; address?: string }> {
+    const res = await fetch(`${this.botApi}/api/sessions/${sessionId}`);
+    if (!res.ok) throw new Error(`bot session status -> HTTP ${res.status}`);
+    return res.json();
+  }
+
+  // Activate bot mode after a session pairs (called by the provider on connect).
+  useBotSession(sessionId: string): void {
+    this.mode = 'bot';
+    this.botSessionId = sessionId;
+  }
+
+  private async botSign(payload: Record<string, unknown>): Promise<{ txHash: string; contractAddress?: string }> {
+    if (!this.botSessionId) throw new Error('no active bot session — reconnect your wallet');
+    const cr = await fetch(`${this.botApi}/api/sessions/${this.botSessionId}/sign-request`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!cr.ok) throw new Error(`bot sign-request failed: HTTP ${cr.status} ${await cr.text()}`);
+    const { requestId } = await cr.json();
+    return new Promise((resolve, reject) => {
+      const iv = setInterval(async () => {
+        try {
+          const r = await fetch(`${this.botApi}/api/sessions/${this.botSessionId}/sign-requests/${requestId}`);
+          if (!r.ok) return; // transient
+          const s = await r.json();
+          if (s.status === 'approved') { clearInterval(iv); resolve({ txHash: s.txHash, contractAddress: s.contractAddress }); }
+          else if (s.status === 'rejected') { clearInterval(iv); reject(new Error(s.error || 'request rejected in wallet')); }
+          else if (s.status === 'expired') { clearInterval(iv); reject(new Error('request expired (5 min) — approve faster next time')); }
+        } catch { /* transient — keep polling */ }
+      }, 2000);
+    });
   }
 
   get provider(): AsentumProviderApi | undefined {
@@ -28,6 +96,7 @@ export class AsentumClient {
   // wallet
   async connect(): Promise<string> {
     const { address } = await this.requireProvider().connect();
+    this.mode = 'extension';
     return address;
   }
 
@@ -40,6 +109,8 @@ export class AsentumClient {
   }
 
   async disconnect(): Promise<void> {
+    this.mode = null;
+    this.botSessionId = null;
     try {
       await this.provider?.disconnect();
     } catch {
@@ -68,8 +139,12 @@ export class AsentumClient {
     return String(j.balance ?? '0');
   }
 
-  // writes (extension-signed)
+  // writes — routed through the active signer (bot session or extension)
   async call(contract: string, method: string, args: unknown[] = [], value: string | bigint = '0'): Promise<string> {
+    if (this.mode === 'bot') {
+      const { txHash } = await this.botSign({ type: 'contract_call', to: contract, method, args, value: String(value) });
+      return txHash;
+    }
     const { txHash } = await this.requireProvider().callContract({
       to: contract, method, args, value: String(value),
     });
@@ -77,11 +152,19 @@ export class AsentumClient {
   }
 
   async transfer(to: string, amount: string | bigint): Promise<string> {
+    if (this.mode === 'bot') {
+      const { txHash } = await this.botSign({ type: 'transfer', to, amount: String(amount) });
+      return txHash;
+    }
     const { txHash } = await this.requireProvider().sendTransfer({ to, amount: String(amount) });
     return txHash;
   }
 
   async deploy(source: string): Promise<{ txHash: string; contractAddress: string }> {
+    if (this.mode === 'bot') {
+      const r = await this.botSign({ type: 'contract_deploy', source });
+      return { txHash: r.txHash, contractAddress: r.contractAddress || '' };
+    }
     return this.requireProvider().deployContract({ source });
   }
 
