@@ -111,10 +111,15 @@ export function ConnectModal() {
         ) : (
           <div style={S.body}>
             <div style={S.steps}>
-              Open your <b>Telegram wallet</b> → tap <b>Connect</b> → enter this code:
+              Open <b>@{c.telegramBot}</b> in Telegram → tap <b>Connect wallet</b> → enter this code:
             </div>
             <div style={S.code}>{code.split('').map((ch, i) => <span key={i} style={S.digit}>{ch}</span>)}</div>
             <div style={S.ttl}>{ttl === 'expired' ? 'Expired' : ttl ? `Expires in ${ttl}` : 'Waiting for wallet…'}</div>
+            {c.telegramBot && (
+              <a href={`https://t.me/${c.telegramBot}`} target="_blank" rel="noopener noreferrer" style={S.tgOpen}>
+                Open @{c.telegramBot} ↗
+              </a>
+            )}
             {c.error && <div style={S.err}>{c.error}</div>}
             <button style={S.back} onClick={() => { stopTimers(); c._setError(null); setView('options'); }}>← Back</button>
           </div>
@@ -148,6 +153,8 @@ const S: Record<string, React.CSSProperties> = {
   digit: { width: 40, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700,
     fontVariantNumeric: 'tabular-nums', background: '#111114', border: '1px solid #2a2a2a', borderRadius: 10, color: '#fff' },
   ttl: { fontSize: 12, color: '#8a8a92', textAlign: 'center' },
+  tgOpen: { display: 'block', textAlign: 'center', fontSize: 12.5, fontWeight: 600, color: '#b7a8ff', textDecoration: 'none',
+    border: '1px solid #2a2440', background: '#14121f', borderRadius: 10, padding: '10px 12px', marginTop: 2 },
   back: { background: 'transparent', border: '1px solid #232323', color: '#9a9aa2', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontSize: 13, alignSelf: 'flex-start' },
   foot: { padding: '12px 16px', borderTop: '1px solid #1c1c1c', fontSize: 11, color: '#6a6a72', background: '#060608' },
 };
