@@ -58,7 +58,7 @@ export function ConnectModal() {
   const options: { key: string; title: string; sub: string; cta: string; onClick: () => void }[] = [];
   options.push({
     key: 'extension',
-    title: c.hasWallet ? 'Browser extension' : 'Install the Asentum extension',
+    title: c.hasWallet ? 'Chrome extension' : 'Install the Chrome extension',
     sub: c.hasWallet ? 'Use the wallet you already have installed' : 'Get the extension, then reconnect',
     cta: c.hasWallet ? 'Connect' : 'Get it',
     onClick: () => { if (c.hasWallet) c.connect(); else window.open('https://www.asentum.com/download', '_blank', 'noopener'); },
