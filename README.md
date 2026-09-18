@@ -59,7 +59,7 @@ function Swap() {
 
 ## API
 
-- **`<AsentumProvider>`** — `rpc?`, `telegramBot?`, `onCreateWallet?`, `onConnect?`, `onDisconnect?`, `persist?`.
+- **`<AsentumProvider>`** — `rpc?`, `telegramBot?`, `onCreateWallet?`, `onConnect?`, `onDisconnect?`, `persist?`, `extensionStatus?` (`'soon'` by default: the browser-extension option renders disabled with a Soon chip; pass `'ready'` to make it connectable once the extension ships).
 - **`<ConnectButton>`** — the button; renders the modal automatically.
 - **`useWallet()`** → `{ address, connected, connecting, error, hasWallet, connect, disconnect, openConnect }`.
 - **`useAsentum()`** → `AsentumClient` (`view`, `call`, `transfer`, `deploy`, `waitReceipt`, `balanceOf`).

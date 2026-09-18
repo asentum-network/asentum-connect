@@ -31,7 +31,7 @@ export function ConnectModal() {
       const expires = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 5 * 60_000;
       const tick = () => {
         const ms = expires - Date.now();
-        if (ms <= 0) { stopTimers(); setTtl('expired'); c._setError('Code expired — go back and try again.'); return; }
+        if (ms <= 0) { stopTimers(); setTtl('expired'); c._setError('Code expired. Go back and try again.'); return; }
         const s = Math.floor(ms / 1000);
         setTtl(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
       };
@@ -45,7 +45,7 @@ export function ConnectModal() {
             c._connectBot({ address: s.address, sessionId: data.sessionId });
             setView('options');
           } else if (s.status === 'rejected') { stopTimers(); c._setError('Connection rejected in the wallet.'); }
-          else if (s.status === 'expired') { stopTimers(); c._setError('Session expired — try again.'); }
+          else if (s.status === 'expired') { stopTimers(); c._setError('Session expired. Try again.'); }
         } catch { /* transient — keep polling */ }
       }, 2000);
     } catch (e: any) {
@@ -55,19 +55,31 @@ export function ConnectModal() {
 
   if (!c._modalOpen) return null;
 
-  const options: { key: string; title: string; sub: string; cta: string; onClick: () => void }[] = [];
-  options.push({
-    key: 'extension',
-    title: c.hasWallet ? 'Chrome extension' : 'Install the Chrome extension',
-    sub: c.hasWallet ? 'Use the wallet you already have installed' : 'Get the extension, then reconnect',
-    cta: c.hasWallet ? 'Connect' : 'Get it',
-    onClick: () => { if (c.hasWallet) c.connect(); else window.open('https://www.asentum.com/download', '_blank', 'noopener'); },
-  });
+  const options: { key: string; title: string; sub: string; cta: string; onClick: () => void; disabled?: boolean; chip?: string }[] = [];
+  if (c.extensionStatus === 'soon') {
+    options.push({
+      key: 'extension',
+      title: 'Browser extension',
+      sub: 'Connect with the Asentum extension once it ships',
+      cta: 'Connect',
+      onClick: () => {},
+      disabled: true,
+      chip: 'Soon',
+    });
+  } else {
+    options.push({
+      key: 'extension',
+      title: c.hasWallet ? 'Browser extension' : 'Install the browser extension',
+      sub: c.hasWallet ? 'Use the wallet you already have installed' : 'Get the extension, then reconnect',
+      cta: c.hasWallet ? 'Connect' : 'Get it',
+      onClick: () => { if (c.hasWallet) c.connect(); else window.open('https://www.asentum.com/download', '_blank', 'noopener'); },
+    });
+  }
   if (c.telegramBot) {
     options.push({
       key: 'telegram',
       title: 'Telegram wallet',
-      sub: 'Pair with a 6-digit code — no app switch',
+      sub: 'Pair with a 6-digit code, no app switch',
       cta: 'Pair',
       onClick: startCode,
     });
@@ -96,14 +108,18 @@ export function ConnectModal() {
         {view === 'options' ? (
           <div style={S.body}>
             {options.map((o) => (
-              <button key={o.key} style={S.option} onClick={o.onClick}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3a3a3a')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#232323')}>
+              <button key={o.key} style={o.disabled ? S.optionDisabled : S.option} onClick={o.onClick}
+                disabled={o.disabled} aria-disabled={o.disabled}
+                onMouseEnter={(e) => { if (!o.disabled) e.currentTarget.style.borderColor = '#3a3a3a'; }}
+                onMouseLeave={(e) => { if (!o.disabled) e.currentTarget.style.borderColor = '#232323'; }}>
                 <div style={S.optText}>
-                  <div style={S.optTitle}>{o.title}</div>
+                  <div style={S.optTitleRow}>
+                    <span style={S.optTitle}>{o.title}</span>
+                    {o.chip && <span style={S.chip}>{o.chip}</span>}
+                  </div>
                   <div style={S.optSub}>{o.sub}</div>
                 </div>
-                <span style={S.optCta}>{o.cta}</span>
+                <span style={o.disabled ? S.optCtaDisabled : S.optCta}>{o.cta}</span>
               </button>
             ))}
             {c.error && <div style={S.err}>{c.error}</div>}
@@ -125,7 +141,7 @@ export function ConnectModal() {
           </div>
         )}
 
-        <div style={S.foot}>We only read on-chain activity and request signatures — never custody your keys.</div>
+        <div style={S.foot}>We only read on-chain activity and request signatures. We never custody your keys.</div>
       </div>
     </div>
   );
@@ -143,10 +159,16 @@ const S: Record<string, React.CSSProperties> = {
   body: { padding: 16, display: 'flex', flexDirection: 'column', gap: 10 },
   option: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', cursor: 'pointer',
     background: '#111114', border: '1px solid #232323', borderRadius: 12, padding: '14px 16px', color: 'inherit', transition: 'border-color .15s' },
+  optionDisabled: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', cursor: 'not-allowed',
+    background: '#0e0e11', border: '1px dashed #232323', borderRadius: 12, padding: '14px 16px', color: 'inherit', opacity: 0.6 },
   optText: { flex: 1 },
+  optTitleRow: { display: 'flex', alignItems: 'center', gap: 8 },
   optTitle: { fontSize: 14, fontWeight: 600 },
+  chip: { fontSize: 9.5, letterSpacing: '.12em', textTransform: 'uppercase', fontWeight: 700, color: '#b7a8ff',
+    background: '#1a1626', border: '1px solid #2a2440', borderRadius: 999, padding: '2px 8px', lineHeight: 1.4 },
   optSub: { fontSize: 12, color: '#8a8a92', marginTop: 3 },
   optCta: { fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: '#b7a8ff', fontWeight: 700 },
+  optCtaDisabled: { fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: '#55555e', fontWeight: 700 },
   err: { fontSize: 12, color: '#ff9db0', padding: '4px 2px' },
   steps: { fontSize: 13, color: '#b7b7bf', lineHeight: 1.5, textAlign: 'center' },
   code: { display: 'flex', justifyContent: 'center', gap: 8, margin: '6px 0' },

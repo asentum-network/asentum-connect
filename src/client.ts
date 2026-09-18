@@ -57,7 +57,7 @@ export class AsentumClient {
   }
 
   private async botSign(payload: Record<string, unknown>): Promise<{ txHash: string; contractAddress?: string }> {
-    if (!this.botSessionId) throw new Error('no active bot session — reconnect your wallet');
+    if (!this.botSessionId) throw new Error('no active bot session, reconnect your wallet');
     const cr = await fetch(`${this.botApi}/api/sessions/${this.botSessionId}/sign-request`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

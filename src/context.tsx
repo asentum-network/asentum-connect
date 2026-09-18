@@ -15,6 +15,7 @@ export interface AsentumContextValue extends WalletState {
   telegramBot?: string;
   dappName?: string;
   onCreateWallet?: () => void | Promise<void>;
+  extensionStatus: 'ready' | 'soon';
   // finalize a paired Telegram-bot session (called by the modal's code flow)
   _connectBot: (p: { address: string; sessionId: string }) => void;
   _setError: (msg: string | null) => void;
@@ -38,10 +39,14 @@ export interface AsentumProviderProps {
   onDisconnect?: () => void;
   // persist connected address to localStorage, default true
   persist?: boolean;
+  // browser-extension option: 'soon' (default) renders it disabled with a Soon chip
+  // until the extension ships; 'ready' makes it connectable again
+  extensionStatus?: 'ready' | 'soon';
 }
 
 export function AsentumProvider({
   children, rpc, telegramBot, botApi, dappName, onCreateWallet, onConnect, onDisconnect, persist = true,
+  extensionStatus = 'soon',
 }: AsentumProviderProps) {
   const client = useMemo(() => new AsentumClient({ rpc, botApi }), [rpc, botApi]);
   const [address, setAddress] = useState<string | null>(null);
@@ -120,6 +125,7 @@ export function AsentumProvider({
     telegramBot,
     dappName,
     onCreateWallet,
+    extensionStatus,
     _connectBot: connectBot,
     _setError: setError,
     _openModal: () => setModalOpen(true),
