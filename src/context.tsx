@@ -39,14 +39,15 @@ export interface AsentumProviderProps {
   onDisconnect?: () => void;
   // persist connected address to localStorage, default true
   persist?: boolean;
-  // browser-extension option: 'soon' (default) renders it disabled with a Soon chip
+  // browser-extension option: 'ready' (default) offers the Asentum extension;
+  // 'soon' renders it disabled with a Soon chip
   // until the extension ships; 'ready' makes it connectable again
   extensionStatus?: 'ready' | 'soon';
 }
 
 export function AsentumProvider({
   children, rpc, telegramBot, botApi, dappName, onCreateWallet, onConnect, onDisconnect, persist = true,
-  extensionStatus = 'soon',
+  extensionStatus = 'ready',
 }: AsentumProviderProps) {
   const client = useMemo(() => new AsentumClient({ rpc, botApi }), [rpc, botApi]);
   const [address, setAddress] = useState<string | null>(null);

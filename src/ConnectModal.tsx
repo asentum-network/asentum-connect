@@ -72,7 +72,7 @@ export function ConnectModal() {
       title: c.hasWallet ? 'Browser extension' : 'Install the browser extension',
       sub: c.hasWallet ? 'Use the wallet you already have installed' : 'Get the extension, then reconnect',
       cta: c.hasWallet ? 'Connect' : 'Get it',
-      onClick: () => { if (c.hasWallet) c.connect(); else window.open('https://www.asentum.com/download', '_blank', 'noopener'); },
+      onClick: () => { if (c.hasWallet) c.connect(); else window.open('https://asentum.com/downloads', '_blank', 'noopener'); },
     });
   }
   if (c.telegramBot) {
