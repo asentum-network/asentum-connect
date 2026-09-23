@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAsentumContext } from './context';
 
+export const CHROME_WEB_STORE_URL =
+  'https://chromewebstore.google.com/detail/asentum-wallet/eanbehbkdekcfgfjfaaocfipmlkdbnoc';
+
 export function ConnectModal() {
   const c = useAsentumContext();
   const [view, setView] = useState<'options' | 'code'>('options');
@@ -72,7 +75,10 @@ export function ConnectModal() {
       title: c.hasWallet ? 'Browser extension' : 'Install the browser extension',
       sub: c.hasWallet ? 'Use the wallet you already have installed' : 'Get the extension, then reconnect',
       cta: c.hasWallet ? 'Connect' : 'Get it',
-      onClick: () => { if (c.hasWallet) c.connect(); else window.open('https://asentum.com/downloads', '_blank', 'noopener'); },
+      // Straight to the Chrome Web Store listing. This used to open the
+      // downloads page, which was a page of build artifacts a user then had to
+      // unzip and sideload; the wallet is listed now, so "Get it" is one click.
+      onClick: () => { if (c.hasWallet) c.connect(); else window.open(CHROME_WEB_STORE_URL, '_blank', 'noopener'); },
     });
   }
   if (c.telegramBot) {
