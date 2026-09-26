@@ -19,6 +19,8 @@ export interface AsentumContextValue extends WalletState {
   // finalize a paired Telegram-bot session (called by the modal's code flow)
   _connectBot: (p: { address: string; sessionId: string }) => void;
   _setError: (msg: string | null) => void;
+  // true while the connected wallet can still sign
+  checkSession: () => Promise<boolean>;
 }
 
 const Ctx = createContext<AsentumContextValue | null>(null);
@@ -59,22 +61,54 @@ export function AsentumProvider({
   onConnectRef.current = onConnect;
   onDisconnectRef.current = onDisconnect;
 
-  // rehydrate a previously-connected wallet (address + method + bot session)
+  // A signed call found the session gone: drop the stale connection so the
+  // header stops showing "connected", and ask the user to reconnect.
+  const expireSession = useCallback(() => {
+    setAddress(null);
+    if (persist && typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
+    setError('Your wallet session has expired. Connect again to continue.');
+    setModalOpen(true);
+    onDisconnectRef.current?.();
+  }, [persist]);
+
+  useEffect(() => {
+    client.onSessionExpired = expireSession;
+    return () => { client.onSessionExpired = null; };
+  }, [client, expireSession]);
+
+  // rehydrate a previously-connected wallet (address + method + bot session),
+  // then confirm the session is still live before trusting it
   useEffect(() => {
     if (!persist || typeof window === 'undefined') return;
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
+    let restored = false;
     try {
       const s = JSON.parse(saved);
       if (s && s.address) {
         setAddress(s.address);
         if (s.method === 'bot' && s.sessionId) client.useBotSession(s.sessionId);
+        restored = s.method === 'bot';
       }
     } catch {
       // legacy: bare address string
       setAddress(saved);
     }
-  }, [persist, client]);
+    if (restored) {
+      client.checkSession().then((live) => { if (!live) expireSession(); });
+    }
+  }, [persist, client, expireSession]);
+
+  // Re-check when the tab comes back into focus: a Telegram session can
+  // expire or be revoked while the page sits in the background.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !address) return;
+    const onFocus = () => {
+      client.checkSession().then((live) => { if (!live) expireSession(); });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [client, address, expireSession]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -129,6 +163,7 @@ export function AsentumProvider({
     extensionStatus,
     _connectBot: connectBot,
     _setError: setError,
+    checkSession: () => client.checkSession(),
     _openModal: () => setModalOpen(true),
     _closeModal: () => setModalOpen(false),
     _modalOpen: modalOpen,

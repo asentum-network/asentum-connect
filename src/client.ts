@@ -3,6 +3,17 @@ import type { AsentumProviderApi, ClientOptions, Receipt } from './types';
 export const DEFAULT_RPC = 'https://testnet.asentum.com';
 export const DEFAULT_BOT_API = 'https://wallet.asentum.com';
 
+// Thrown when the wallet session behind a signed call is gone (Telegram
+// session expired or revoked, extension no longer connected to this site).
+// The provider catches it, clears the stale connection and reopens the
+// connect modal.
+export class SessionExpiredError extends Error {
+  constructor(message = 'Your wallet session has expired. Reconnect your wallet to continue.') {
+    super(message);
+    this.name = 'SessionExpiredError';
+  }
+}
+
 export interface BotSession {
   sessionId: string;
   code: string;
@@ -20,6 +31,8 @@ export class AsentumClient {
   // useBotSession() after the code is paired.
   private mode: 'extension' | 'bot' | null = null;
   private botSessionId: string | null = null;
+  // Set by the provider; called whenever a signed call finds the session gone.
+  onSessionExpired: (() => void) | null = null;
 
   constructor(opts: ClientOptions = {}) {
     this.rpc = opts.rpc || DEFAULT_RPC;
@@ -56,14 +69,47 @@ export class AsentumClient {
     this.botSessionId = sessionId;
   }
 
+  private expired(): never {
+    this.onSessionExpired?.();
+    throw new SessionExpiredError();
+  }
+
+  // True while the active session can still sign. A Telegram session is asked
+  // directly; an extension session checks the extension still has an account
+  // for this site. Network blips count as live so a flaky connection never
+  // logs anyone out.
+  async checkSession(): Promise<boolean> {
+    if (this.mode === 'bot' && this.botSessionId) {
+      try {
+        const res = await fetch(`${this.botApi}/api/sessions/${this.botSessionId}`);
+        if (res.status === 404 || res.status === 410) return false;
+        if (!res.ok) return true;
+        const s = await res.json();
+        return s.status === 'connected';
+      } catch {
+        return true;
+      }
+    }
+    if (!this.provider) return false;
+    try {
+      return !!(await this.provider.getAddress());
+    } catch {
+      return false;
+    }
+  }
+
   private async botSign(payload: Record<string, unknown>): Promise<{ txHash: string; contractAddress?: string }> {
-    if (!this.botSessionId) throw new Error('no active bot session, reconnect your wallet');
+    if (!this.botSessionId) this.expired();
     const cr = await fetch(`${this.botApi}/api/sessions/${this.botSessionId}/sign-request`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!cr.ok) throw new Error(`bot sign-request failed: HTTP ${cr.status} ${await cr.text()}`);
+    if (!cr.ok) {
+      const text = await cr.text();
+      if (cr.status === 404 || cr.status === 410 || /session|expired|revoked/i.test(text)) this.expired();
+      throw new Error(`bot sign-request failed: HTTP ${cr.status} ${text}`);
+    }
     const { requestId } = await cr.json();
     return new Promise((resolve, reject) => {
       const iv = setInterval(async () => {
@@ -91,6 +137,17 @@ export class AsentumClient {
     const p = this.provider;
     if (!p) throw new Error('Asentum wallet extension not found. Install it to continue.');
     return p;
+  }
+
+  // Run an extension call; a "not connected / no permission" answer means the
+  // site lost its connection, which is a session problem, not a failed tx.
+  private async viaExtension<T>(fn: (p: AsentumProviderApi) => Promise<T>): Promise<T> {
+    try {
+      return await fn(this.requireProvider());
+    } catch (e: any) {
+      if (/not connected|not authori[sz]ed|permission|connect first|locked/i.test(String(e?.message || ''))) this.expired();
+      throw e;
+    }
   }
 
   // wallet
@@ -145,9 +202,9 @@ export class AsentumClient {
       const { txHash } = await this.botSign({ type: 'contract_call', to: contract, method, args, value: String(value) });
       return txHash;
     }
-    const { txHash } = await this.requireProvider().callContract({
+    const { txHash } = await this.viaExtension((p) => p.callContract({
       to: contract, method, args, value: String(value),
-    });
+    }));
     return txHash;
   }
 
@@ -156,7 +213,7 @@ export class AsentumClient {
       const { txHash } = await this.botSign({ type: 'transfer', to, amount: String(amount) });
       return txHash;
     }
-    const { txHash } = await this.requireProvider().sendTransfer({ to, amount: String(amount) });
+    const { txHash } = await this.viaExtension((p) => p.sendTransfer({ to, amount: String(amount) }));
     return txHash;
   }
 
@@ -165,7 +222,7 @@ export class AsentumClient {
       const r = await this.botSign({ type: 'contract_deploy', source });
       return { txHash: r.txHash, contractAddress: r.contractAddress || '' };
     }
-    return this.requireProvider().deployContract({ source });
+    return this.viaExtension((p) => p.deployContract({ source }));
   }
 
   // poll a receipt until it lands

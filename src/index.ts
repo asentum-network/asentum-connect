@@ -1,4 +1,4 @@
-export { AsentumClient, DEFAULT_RPC, shortAddress } from './client';
+export { AsentumClient, DEFAULT_RPC, SessionExpiredError, shortAddress } from './client';
 export { AsentumProvider, useAsentumContext } from './context';
 export type { AsentumProviderProps, AsentumContextValue } from './context';
 export { useWallet, useAsentum, useContract, useBalance } from './hooks';
