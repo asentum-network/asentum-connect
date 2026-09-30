@@ -31,7 +31,10 @@ export interface Receipt {
 }
 
 export interface WalletState {
+  /** Connected address exactly as the wallet returned it (for RPC and contract calls). */
   address: string | null;
+  /** The same address in ase1 form, for anything shown to the user. */
+  ase1Address: string | null;
   connected: boolean;
   connecting: boolean;
   error: string | null;

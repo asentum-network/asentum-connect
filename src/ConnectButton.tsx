@@ -40,6 +40,7 @@ export function ConnectButton({
   }
 
   const label = shortAddress(c.address);
+  const ase1 = c.ase1Address || '';
   if (!menu) {
     return <button className={className} style={base} onClick={() => c.disconnect()}>{label}</button>;
   }
@@ -48,7 +49,7 @@ export function ConnectButton({
       <button className={className} style={base} onClick={() => setOpen((o) => !o)}>{label} ▾</button>
       {open && (
         <div style={M.menu} onMouseLeave={() => setOpen(false)}>
-          <button style={M.item} onClick={() => { navigator.clipboard?.writeText(c.address || ''); setOpen(false); }}>Copy address</button>
+          <button style={M.item} onClick={() => { navigator.clipboard?.writeText(ase1); setOpen(false); }}>Copy address</button>
           <button style={{ ...M.item, color: '#ff9db0' }} onClick={() => { c.disconnect(); setOpen(false); }}>Disconnect</button>
         </div>
       )}

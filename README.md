@@ -81,7 +81,7 @@ import { useWallet, useAsentum, useContract, useBalance } from '@asentum/connect
 function Swap() {
   const { address, connected, openConnect } = useWallet();
   const client = useAsentum();
-  const dex = useContract('0xYourContract');
+  const dex = useContract('ase1yourcontract...');
   const { balance, refresh } = useBalance();      // native ASE, wei string, polls every 12s
 
   async function trade() {
@@ -106,7 +106,7 @@ function Swap() {
   Soon chip).
 - **`<ConnectButton>`** — the button; renders the modal automatically.
 - **`<ConnectModal>`** — the modal on its own, for custom triggers.
-- **`useWallet()`** → `{ address, connected, connecting, error, hasWallet, connect, disconnect, openConnect }`.
+- **`useWallet()`** → `{ address, ase1Address, connected, connecting, error, hasWallet, connect, disconnect, openConnect }`.
 - **`useAsentum()`** → `AsentumClient` (`view`, `call`, `transfer`, `deploy`, `waitReceipt`, `balanceOf`).
 - **`useContract(addr)`** → `{ address, view(method,args), call(method,args,value) }`.
 - **`useBalance(addr?, pollMs?)`** → `{ balance, loading, refresh }`. `balance` is a wei decimal string.
@@ -114,7 +114,8 @@ function Swap() {
   scripts and back-ends. Writes need a signer, so they only work in a browser
   with the extension present or a paired Telegram session; to sign server-side
   use `@asentum/sdk`, which holds a key directly.
-- **`shortAddress(addr, lead?, tail?)`** and **`DEFAULT_RPC`** — small helpers.
+- **`shortAddress(addr, lead?, tail?)`** and **`DEFAULT_RPC`** — small helpers. `shortAddress` always renders ase1.
+- **`toAse1`, `hexToAse1`, `ase1ToHex`, `isAse1`, `shortAse1`** — ase1 (bech32, HRP `ase`) helpers. Show users `ase1Address` or `toAse1(x)`; never show hex. `address` stays in the form the wallet returned it, for RPC calls. Client methods accept ase1 or hex addresses.
 
 ## How it works
 

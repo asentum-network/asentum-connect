@@ -7,6 +7,7 @@ export function useWallet() {
   const c = useAsentumContext();
   return {
     address: c.address,
+    ase1Address: c.ase1Address,
     connected: c.connected,
     connecting: c.connecting,
     error: c.error,

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AsentumClient } from './client';
+import { toAse1 } from './ase1';
 import type { WalletState } from './types';
 
 const STORAGE_KEY = 'asentum:connect:address';
@@ -151,6 +152,7 @@ export function AsentumProvider({
   const value: AsentumContextValue = {
     client,
     address,
+    ase1Address: address ? toAse1(address) : null,
     connected: !!address,
     connecting,
     error,

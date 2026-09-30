@@ -1,4 +1,8 @@
 import type { AsentumProviderApi, ClientOptions, Receipt } from './types';
+import { shortAse1, ase1ToHex } from './ase1';
+
+// Accept ase1 or hex from callers; RPC and signers get hex.
+const hexAddr = (a: string): string => ase1ToHex(a) ?? a;
 
 export const DEFAULT_RPC = 'https://testnet.asentum.com';
 export const DEFAULT_BOT_API = 'https://wallet.asentum.com';
@@ -119,7 +123,7 @@ export class AsentumClient {
           const s = await r.json();
           if (s.status === 'approved') { clearInterval(iv); resolve({ txHash: s.txHash, contractAddress: s.contractAddress }); }
           else if (s.status === 'rejected') { clearInterval(iv); reject(new Error(s.error || 'request rejected in wallet')); }
-          else if (s.status === 'expired') { clearInterval(iv); reject(new Error('request expired (5 min) — approve faster next time')); }
+          else if (s.status === 'expired') { clearInterval(iv); reject(new Error('Request expired after 5 minutes. Approve it sooner next time.')); }
         } catch { /* transient — keep polling */ }
       }, 2000);
     });
@@ -177,6 +181,7 @@ export class AsentumClient {
 
   // reads (no wallet)
   async view<T = unknown>(contract: string, method: string, args: unknown[] = []): Promise<T> {
+    contract = hexAddr(contract);
     const res = await fetch(`${this.rpc}/view`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -190,7 +195,7 @@ export class AsentumClient {
 
   // native ASE balance, wei decimal string
   async balanceOf(address: string): Promise<string> {
-    const res = await fetch(`${this.rpc}/balance/${address}`);
+    const res = await fetch(`${this.rpc}/balance/${hexAddr(address)}`);
     if (!res.ok) throw new Error(`balance -> HTTP ${res.status}`);
     const j = await res.json();
     return String(j.balance ?? '0');
@@ -198,6 +203,7 @@ export class AsentumClient {
 
   // writes — routed through the active signer (bot session or extension)
   async call(contract: string, method: string, args: unknown[] = [], value: string | bigint = '0'): Promise<string> {
+    contract = hexAddr(contract);
     if (this.mode === 'bot') {
       const { txHash } = await this.botSign({ type: 'contract_call', to: contract, method, args, value: String(value) });
       return txHash;
@@ -209,6 +215,7 @@ export class AsentumClient {
   }
 
   async transfer(to: string, amount: string | bigint): Promise<string> {
+    to = hexAddr(to);
     if (this.mode === 'bot') {
       const { txHash } = await this.botSign({ type: 'transfer', to, amount: String(amount) });
       return txHash;
@@ -244,8 +251,7 @@ export class AsentumClient {
   }
 }
 
-// 0x1234…abcd
-export function shortAddress(a?: string | null, lead = 6, tail = 4): string {
-  if (!a) return '';
-  return a.length > lead + tail ? `${a.slice(0, lead)}…${a.slice(-tail)}` : a;
+// Shortened address for display, always ase1 (hex input is converted).
+export function shortAddress(a?: string | null, lead = 10, tail = 6): string {
+  return shortAse1(a, lead, tail);
 }
