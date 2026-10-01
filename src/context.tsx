@@ -2,8 +2,58 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AsentumClient } from './client';
 import { toAse1 } from './ase1';
 import type { WalletState } from './types';
+import {
+  isLocalHost, isNetworkError, normalizeRpcUrl, validateRpc,
+} from './rpc-validation';
 
 const STORAGE_KEY = 'asentum:connect:address';
+// The end user's own RPC, if they chose one. Plain URL string.
+export const RPC_STORAGE_KEY = 'asentum.rpc';
+
+function readSavedRpc(): string | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    return window.localStorage.getItem(RPC_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedRpc(url: string | null): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    if (url) window.localStorage.setItem(RPC_STORAGE_KEY, url);
+    else window.localStorage.removeItem(RPC_STORAGE_KEY);
+  } catch {
+    // storage blocked (private mode, sandboxed iframe): keep it for this page only
+  }
+}
+
+export interface SetRpcResult {
+  ok: boolean;
+  /** Finalized block height of the node, when it answered. */
+  height?: number;
+  /** Plain-English reason it was not accepted. */
+  error?: string;
+  /** What was checked, in order, e.g. "Node is on chain 1423". */
+  checks?: string[];
+  /** Note about plain http, when relevant. */
+  note?: string;
+}
+
+export interface RpcState {
+  /** RPC in use (the user's own when set, else the dapp's). */
+  rpc: string;
+  /** The dapp's RPC. */
+  defaultRpc: string;
+  isCustom: boolean;
+  /** False when the dapp passed allowCustomRpc={false}. */
+  allowed: boolean;
+  /** The user's own RPC stopped answering (a read failed with a network error). */
+  failing: boolean;
+  /** Reads are going to the dapp's RPC for now, by the user's choice. */
+  readingFromDefault: boolean;
+}
 
 export interface AsentumContextValue extends WalletState {
   client: AsentumClient;
@@ -22,6 +72,10 @@ export interface AsentumContextValue extends WalletState {
   _setError: (msg: string | null) => void;
   // true while the connected wallet can still sign
   checkSession: () => Promise<boolean>;
+  rpcState: RpcState;
+  setRpc: (url: string) => Promise<SetRpcResult>;
+  resetRpc: () => void;
+  readFromDefault: (on: boolean) => void;
 }
 
 const Ctx = createContext<AsentumContextValue | null>(null);
@@ -46,13 +100,20 @@ export interface AsentumProviderProps {
   // 'soon' renders it disabled with a Soon chip
   // until the extension ships; 'ready' makes it connectable again
   extensionStatus?: 'ready' | 'soon';
+  // let the END USER point reads (view, balance, receipts) at their own node,
+  // saved in localStorage under 'asentum.rpc'. Default true. Transactions
+  // signed in the browser extension use the extension's own RPC setting.
+  allowCustomRpc?: boolean;
 }
 
 export function AsentumProvider({
   children, rpc, telegramBot, botApi, dappName, onCreateWallet, onConnect, onDisconnect, persist = true,
-  extensionStatus = 'ready',
+  extensionStatus = 'ready', allowCustomRpc = true,
 }: AsentumProviderProps) {
   const client = useMemo(() => new AsentumClient({ rpc, botApi }), [rpc, botApi]);
+  const [rpcOverride, setRpcOverride] = useState<string | null>(null);
+  const [rpcFailing, setRpcFailing] = useState(false);
+  const [readingFromDefault, setReadingFromDefault] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +137,74 @@ export function AsentumProvider({
     client.onSessionExpired = expireSession;
     return () => { client.onSessionExpired = null; };
   }, [client, expireSession]);
+
+  // Apply the user's saved RPC after mount (never during render, so SSR and
+  // hydration see the dapp's RPC). Re-applied when the client is rebuilt.
+  useEffect(() => {
+    let applied: string | null = null;
+    if (allowCustomRpc) {
+      const saved = readSavedRpc();
+      const n = saved ? normalizeRpcUrl(saved) : null;
+      if (n && n.ok) {
+        try {
+          client.setRpcOverride(n.url);
+          applied = client.isCustomRpc ? client.rpc : null;
+        } catch {
+          applied = null;
+        }
+      }
+    }
+    if (!applied) client.setRpcOverride(null);
+    setRpcOverride(applied);
+    setRpcFailing(false);
+    setReadingFromDefault(false);
+  }, [client, allowCustomRpc]);
+
+  // Report a dead custom RPC instead of silently switching nodes.
+  useEffect(() => {
+    client.onRpcError = (e) => { if (isNetworkError(e)) setRpcFailing(true); };
+    client.onRpcOk = () => setRpcFailing(false);
+    return () => { client.onRpcError = null; client.onRpcOk = null; };
+  }, [client]);
+
+  const setRpc = useCallback(async (url: string): Promise<SetRpcResult> => {
+    if (!allowCustomRpc) return { ok: false, error: 'This app does not allow a custom RPC.' };
+    const n = normalizeRpcUrl(url);
+    if (!n.ok) return { ok: false, error: n.error };
+    // An https page cannot call a plain-http node on the network (mixed content).
+    if (n.insecure && typeof window !== 'undefined' && window.location?.protocol === 'https:') {
+      const hostname = n.host.replace(/:\d+$/, '');
+      const loopback = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i.test(hostname);
+      if (!loopback && isLocalHost(hostname)) {
+        return { ok: false, error: 'This page uses https, so your browser will block a plain http node on your network. Use an https address.' };
+      }
+    }
+    const result = await validateRpc(n.url);
+    if (!result.ok || !result.url || result.height == null) {
+      return { ok: false, error: result.error || 'The node did not pass the checks.', checks: result.checks, note: result.note };
+    }
+    client.setRpcOverride(result.url);
+    const applied = client.isCustomRpc ? client.rpc : null;
+    writeSavedRpc(applied);
+    setRpcOverride(applied);
+    setRpcFailing(false);
+    setReadingFromDefault(false);
+    return { ok: true, height: result.height, checks: result.checks, note: result.note };
+  }, [client, allowCustomRpc]);
+
+  const resetRpc = useCallback(() => {
+    client.setRpcOverride(null);
+    writeSavedRpc(null);
+    setRpcOverride(null);
+    setRpcFailing(false);
+    setReadingFromDefault(false);
+  }, [client]);
+
+  const readFromDefault = useCallback((on: boolean) => {
+    client.setReadFromDefault(on);
+    setReadingFromDefault(client.readingFromDefault);
+    setRpcFailing(false);
+  }, [client]);
 
   // rehydrate a previously-connected wallet (address + method + bot session),
   // then confirm the session is still live before trusting it
@@ -166,6 +295,17 @@ export function AsentumProvider({
     _connectBot: connectBot,
     _setError: setError,
     checkSession: () => client.checkSession(),
+    rpcState: {
+      rpc: rpcOverride || client.defaultRpc,
+      defaultRpc: client.defaultRpc,
+      isCustom: rpcOverride != null,
+      allowed: allowCustomRpc,
+      failing: rpcFailing,
+      readingFromDefault,
+    },
+    setRpc,
+    resetRpc,
+    readFromDefault,
     _openModal: () => setModalOpen(true),
     _closeModal: () => setModalOpen(false),
     _modalOpen: modalOpen,

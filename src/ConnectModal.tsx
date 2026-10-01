@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAsentumContext } from './context';
+import { NetworkSettings } from './NetworkSettings';
 
 export const CHROME_WEB_STORE_URL =
   'https://chromewebstore.google.com/detail/asentum-wallet/eanbehbkdekcfgfjfaaocfipmlkdbnoc';
@@ -146,6 +147,8 @@ export function ConnectModal() {
             <button style={S.back} onClick={() => { stopTimers(); c._setError(null); setView('options'); }}>← Back</button>
           </div>
         )}
+
+        {view === 'options' && c.rpcState.allowed && <NetworkSettings compact />}
 
         <div style={S.foot}>We only read on-chain activity and request signatures. We never custody your keys.</div>
       </div>

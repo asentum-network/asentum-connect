@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useAsentumContext } from './context';
 import { ConnectModal } from './ConnectModal';
+import { NetworkSettings } from './NetworkSettings';
 import { shortAddress } from './client';
 
 export interface ConnectButtonProps {
@@ -9,7 +10,7 @@ export interface ConnectButtonProps {
   color?: string;
   border?: string;
   radius?: number;
-  menu?: boolean;     // copy/disconnect menu when connected, default true
+  menu?: boolean;     // copy/network/disconnect menu when connected, default true
   className?: string;
   style?: React.CSSProperties;
 }
@@ -19,6 +20,9 @@ export function ConnectButton({
 }: ConnectButtonProps) {
   const c = useAsentumContext();
   const [open, setOpen] = useState(false);
+  // keep the menu open while the user is typing an RPC address
+  const editingRef = useRef(false);
+  const onEditingChange = useCallback((e: boolean) => { editingRef.current = e; }, []);
 
   const base: React.CSSProperties = {
     background: bg || 'linear-gradient(135deg,#7c5cff,#9d7bff)',
@@ -46,10 +50,14 @@ export function ConnectButton({
   }
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
-      <button className={className} style={base} onClick={() => setOpen((o) => !o)}>{label} ▾</button>
+      <button className={className} style={base} onClick={() => setOpen((o) => !o)}>
+        {label}
+        {c.rpcState.isCustom && c.rpcState.failing && <span title="Your custom RPC is not answering" style={M.dot} />} ▾
+      </button>
       {open && (
-        <div style={M.menu} onMouseLeave={() => setOpen(false)}>
+        <div style={M.menu} onMouseLeave={() => { if (!editingRef.current) setOpen(false); }}>
           <button style={M.item} onClick={() => { navigator.clipboard?.writeText(ase1); setOpen(false); }}>Copy address</button>
+          <NetworkSettings onEditingChange={onEditingChange} />
           <button style={{ ...M.item, color: '#ff9db0' }} onClick={() => { c.disconnect(); setOpen(false); }}>Disconnect</button>
         </div>
       )}
@@ -58,9 +66,10 @@ export function ConnectButton({
 }
 
 const M: Record<string, React.CSSProperties> = {
-  menu: { position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 999, minWidth: 160,
+  menu: { position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 999, minWidth: 160, width: 300, maxWidth: 'calc(100vw - 32px)',
     background: '#0b0b0e', border: '1px solid #232323', borderRadius: 10, overflow: 'hidden',
     boxShadow: '0 10px 30px rgba(0,0,0,.5)' },
   item: { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
     color: '#e9e9ee', padding: '10px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
+  dot: { display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: '#f2b36f', marginLeft: 6, verticalAlign: 'middle' },
 };

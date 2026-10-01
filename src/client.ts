@@ -1,5 +1,6 @@
 import type { AsentumProviderApi, ClientOptions, Receipt } from './types';
 import { shortAse1, ase1ToHex, ase1ArgsToHex } from './ase1';
+import { normalizeRpcUrl, stripTrailingSlashes } from './rpc-validation';
 
 // Accept ase1 or hex from callers; RPC and signers get hex.
 const hexAddr = (a: string): string => ase1ToHex(a) ?? a;
@@ -24,13 +25,22 @@ export interface BotSession {
   expiresAt?: number;
 }
 
-// Reads hit the public RPC directly. Writes go through the active signer:
-// either the browser extension (window.asentum) or a paired Telegram-bot
-// session (the 6-digit-code flow), which posts a sign-request the user
-// approves inside their Telegram wallet.
+// Reads hit the RPC directly: the dapp's `rpc`, or the end user's own RPC when
+// they picked one (see setRpcOverride / useRpc). Writes go through the active
+// signer: either the browser extension (window.asentum, which uses the RPC set
+// in the extension) or a paired Telegram-bot session (the 6-digit-code flow),
+// which posts a sign-request the user approves inside their Telegram wallet.
 export class AsentumClient {
-  readonly rpc: string;
+  /** The dapp's RPC (the `rpc` option, or DEFAULT_RPC). */
+  readonly defaultRpc: string;
   readonly botApi: string;
+  // End-user RPC override (already validated by the caller), or null.
+  private rpcOverride: string | null = null;
+  // "Read from the default for now" while the user's own RPC is not answering.
+  private readFromDefault = false;
+  // Set by the provider: a read against the user's own RPC failed / succeeded.
+  onRpcError: ((err: unknown) => void) | null = null;
+  onRpcOk: (() => void) | null = null;
   // active signer: 'extension' | 'bot' | null. Bot mode is set via
   // useBotSession() after the code is paired.
   private mode: 'extension' | 'bot' | null = null;
@@ -39,8 +49,59 @@ export class AsentumClient {
   onSessionExpired: (() => void) | null = null;
 
   constructor(opts: ClientOptions = {}) {
-    this.rpc = opts.rpc || DEFAULT_RPC;
+    this.defaultRpc = stripTrailingSlashes(opts.rpc || DEFAULT_RPC) || DEFAULT_RPC;
     this.botApi = opts.botApi || DEFAULT_BOT_API;
+  }
+
+  /** The RPC in use: the user's own when they set one, else the dapp's. */
+  get rpc(): string {
+    return this.rpcOverride || this.defaultRpc;
+  }
+
+  /** True when the end user picked their own RPC. */
+  get isCustomRpc(): boolean {
+    return this.rpcOverride != null;
+  }
+
+  /** RPC used for reads right now (the default while reading from it on purpose). */
+  get readRpc(): string {
+    return this.readFromDefault && this.rpcOverride ? this.defaultRpc : this.rpc;
+  }
+
+  get readingFromDefault(): boolean {
+    return this.readFromDefault && this.rpcOverride != null;
+  }
+
+  /**
+   * Point reads at the user's own RPC (null goes back to the dapp's). The URL
+   * is normalised here but not network-checked; use validateRpc / useRpc's
+   * setRpc for that.
+   */
+  setRpcOverride(url: string | null): void {
+    this.readFromDefault = false;
+    if (!url) { this.rpcOverride = null; return; }
+    const n = normalizeRpcUrl(url);
+    if (!n.ok) throw new Error(n.error);
+    this.rpcOverride = n.url.toLowerCase() === this.defaultRpc.toLowerCase() ? null : n.url;
+  }
+
+  /** Read from the dapp's RPC for now while the user's own is not answering. */
+  setReadFromDefault(on: boolean): void {
+    this.readFromDefault = on;
+  }
+
+  // Every read goes through here so a dead custom RPC is reported, never
+  // silently swapped for another node.
+  private async readFetch(path: string, init?: RequestInit): Promise<Response> {
+    const custom = this.rpcOverride != null && !this.readFromDefault;
+    try {
+      const res = await fetch(`${this.readRpc}${path}`, init);
+      if (custom) this.onRpcOk?.();
+      return res;
+    } catch (e) {
+      if (custom) this.onRpcError?.(e);
+      throw e;
+    }
   }
 
   // ── Telegram-bot session (6-digit code pairing) ─────────────────────────
@@ -182,7 +243,7 @@ export class AsentumClient {
   // reads (no wallet)
   async view<T = unknown>(contract: string, method: string, args: unknown[] = []): Promise<T> {
     contract = hexAddr(contract);
-    const res = await fetch(`${this.rpc}/view`, {
+    const res = await this.readFetch('/view', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ contract, method, args: ase1ArgsToHex(args) }),
@@ -195,7 +256,7 @@ export class AsentumClient {
 
   // native ASE balance, wei decimal string
   async balanceOf(address: string): Promise<string> {
-    const res = await fetch(`${this.rpc}/balance/${hexAddr(address)}`);
+    const res = await this.readFetch(`/balance/${hexAddr(address)}`);
     if (!res.ok) throw new Error(`balance -> HTTP ${res.status}`);
     const j = await res.json();
     return String(j.balance ?? '0');
@@ -239,7 +300,7 @@ export class AsentumClient {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       try {
-        const r = await fetch(`${this.rpc}/receipts/${txHash}`);
+        const r = await this.readFetch(`/receipts/${txHash}`);
         if (r.ok) {
           const j = await r.json();
           if (j && j.blockNumber) return j as Receipt;
