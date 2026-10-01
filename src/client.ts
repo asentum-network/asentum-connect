@@ -1,5 +1,5 @@
 import type { AsentumProviderApi, ClientOptions, Receipt } from './types';
-import { shortAse1, ase1ToHex } from './ase1';
+import { shortAse1, ase1ToHex, ase1ArgsToHex } from './ase1';
 
 // Accept ase1 or hex from callers; RPC and signers get hex.
 const hexAddr = (a: string): string => ase1ToHex(a) ?? a;
@@ -185,7 +185,7 @@ export class AsentumClient {
     const res = await fetch(`${this.rpc}/view`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ contract, method, args }),
+      body: JSON.stringify({ contract, method, args: ase1ArgsToHex(args) }),
     });
     if (!res.ok) throw new Error(`view ${method} -> HTTP ${res.status}`);
     const j = await res.json();
@@ -204,6 +204,8 @@ export class AsentumClient {
   // writes — routed through the active signer (bot session or extension)
   async call(contract: string, method: string, args: unknown[] = [], value: string | bigint = '0'): Promise<string> {
     contract = hexAddr(contract);
+    // ase1 inside args becomes 0x: contracts compare against hex msg.sender.
+    args = ase1ArgsToHex(args);
     if (this.mode === 'bot') {
       const { txHash } = await this.botSign({ type: 'contract_call', to: contract, method, args, value: String(value) });
       return txHash;

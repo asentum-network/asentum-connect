@@ -102,3 +102,30 @@ export function shortAse1(a?: string | null, lead = 10, tail = 6): string {
   const s = toAse1(a);
   return s.length > lead + tail ? `${s.slice(0, lead)}…${s.slice(-tail)}` : s;
 }
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  if (v === null || typeof v !== 'object') return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Contract call arguments with every ase1 address turned into lowercase 0x.
+ * Contracts compare against hex msg.sender, so an ase1 argument would be
+ * stored verbatim and never match. Walks arrays and plain objects (values
+ * only, never keys). A string converts only when it is exactly a valid ase1
+ * address, with no surrounding whitespace. Returns a new structure and never
+ * mutates the input; hex input passes through, so converting twice is safe.
+ */
+export function ase1ArgsToHex<T>(value: T): T {
+  if (typeof value === 'string') {
+    return (value === value.trim() ? ase1ToHex(value) ?? value : value) as T;
+  }
+  if (Array.isArray(value)) return value.map((v) => ase1ArgsToHex(v)) as T;
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(value)) out[k] = ase1ArgsToHex(value[k]);
+    return out as T;
+  }
+  return value;
+}
