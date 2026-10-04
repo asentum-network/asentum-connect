@@ -86,8 +86,9 @@ function Swap() {
 
   async function trade() {
     if (!connected) return openConnect();
-    const out = await dex.view('quote', ['1', tokenIn, amountIn]);            // read, free
-    const tx  = await dex.call('swapExactIn', ['1', tokenIn, amountIn, '1']); // write, signed
+    const out = BigInt(await dex.view('quote', ['1', tokenIn, amountIn]));   // read, free
+    const minOut = (out * 9900n) / 10000n;                                     // 1% slippage, from the quote shown
+    const tx  = await dex.call('swapExactIn', ['1', tokenIn, amountIn, minOut.toString()]); // write, signed
     const receipt = await client.waitReceipt(tx);
     if (!receipt.success) throw new Error('swap reverted');
     refresh();
