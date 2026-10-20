@@ -130,6 +130,41 @@ connected with: the **Asentum browser extension** (`window.asentum`) or a
 paired **Telegram wallet** session. Either way the user is prompted to approve,
 and private keys never touch this library.
 
+## Atomic calls and batching
+
+Every write is one transaction carrying one contract call, and it commits on
+its own. There is no atomic multi-call bundle: the `tx.bundle([...])` example on
+the Smart Contracts concept page does not run, because a contract has no `tx`
+object and the example throws `tx is not defined`. The globals a contract does
+get are `assert`, `chain`, `emit`, `msg`, `storage`, `transfer` and `E`, plus
+`harden` and `Compartment`, and none of them groups calls into one all-or-nothing
+transaction.
+
+`E(other).method(...)` is asynchronous message passing, not a synchronous call:
+the request is queued and the other contract runs it in a later transaction. It
+cannot return a value to the caller, and it cannot be rolled back together with
+the caller's transaction, so it cannot be assembled into an atomic bundle. Treat
+atomic bundles as not available yet.
+
+What to do instead:
+
+- **All-or-nothing belongs in one contract method.** Put the steps that must
+  succeed or fail together in a single method and make one `call()`. That
+  transaction reverts as a unit.
+- **Several writes are a sequence, not a bundle.** Send them one at a time,
+  await `waitReceipt(tx)` for each, and check `receipt.success`. If the second
+  call fails the first one is already committed, so stop and tell the user what
+  went through; retrying the whole sequence can apply the first step twice.
+- **Reads never share a transaction with a write.** `view()` runs against the
+  node with no wallet, so read what you need, write, then read again to
+  confirm. Do not assume a `view` is part of the write.
+
+The node does accept several already-signed transactions in one request
+(`POST /tx/batch`, `sendBatch` in `@asentum/sdk`), but that only saves round
+trips: each transaction still executes and commits on its own, and one can
+revert while the others land. The kit signs through the extension or a Telegram
+session, so it sends calls one at a time.
+
 ## Custom RPC
 
 Anyone can run an Asentum node, and validators often serve their own RPC. With
