@@ -3,10 +3,15 @@ export interface AsentumProviderApi {
   getAddress(): Promise<string>;
   connect(): Promise<{ address: string }>;
   disconnect(): Promise<void>;
-  sendTransfer(p: { to: string; amount: string }): Promise<{ txHash: string }>;
-  callContract(p: { to: string; method: string; args?: unknown[]; value?: string }): Promise<{ txHash: string }>;
+  // toName: the "@name" the dapp resolved `to` from; the wallet re-resolves it before showing it.
+  sendTransfer(p: { to: string; amount: string; toName?: string }): Promise<{ txHash: string }>;
+  callContract(p: { to: string; method: string; args?: unknown[]; value?: string; gasLimit?: string }): Promise<{ txHash: string }>;
   viewContract(p: { to: string; method: string; args?: unknown[] }): Promise<{ result: unknown }>;
   deployContract(p: { source: string }): Promise<{ txHash: string; contractAddress: string }>;
+  /** Extension 0.7.0+: sign a message after the user approves the full text. */
+  signMessage?(p: { message: string }): Promise<{ address: string; publicKey: string; signature: string }>;
+  /** Extension 0.7.0+: feature list, e.g. ['signMessage', 'names']. */
+  features?: string[];
 }
 
 declare global {

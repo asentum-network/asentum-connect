@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AsentumClient } from './client';
 import { toAse1 } from './ase1';
+import { storageGet, storageRemove, storageSet } from './storage';
 import type { WalletState } from './types';
 import {
   isLocalHost, isNetworkError, normalizeRpcUrl, validateRpc,
@@ -11,22 +12,12 @@ const STORAGE_KEY = 'asentum:connect:address';
 export const RPC_STORAGE_KEY = 'asentum.rpc';
 
 function readSavedRpc(): string | null {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return null;
-    return window.localStorage.getItem(RPC_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  return storageGet(RPC_STORAGE_KEY);
 }
 
 function writeSavedRpc(url: string | null): void {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    if (url) window.localStorage.setItem(RPC_STORAGE_KEY, url);
-    else window.localStorage.removeItem(RPC_STORAGE_KEY);
-  } catch {
-    // storage blocked (private mode, sandboxed iframe): keep it for this page only
-  }
+  if (url) storageSet(RPC_STORAGE_KEY, url);
+  else storageRemove(RPC_STORAGE_KEY);
 }
 
 export interface SetRpcResult {
@@ -127,7 +118,7 @@ export function AsentumProvider({
   // header stops showing "connected", and ask the user to reconnect.
   const expireSession = useCallback(() => {
     setAddress(null);
-    if (persist && typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
+    if (persist) storageRemove(STORAGE_KEY);
     setError('Your wallet session has expired. Connect again to continue.');
     setModalOpen(true);
     onDisconnectRef.current?.();
@@ -210,7 +201,7 @@ export function AsentumProvider({
   // then confirm the session is still live before trusting it
   useEffect(() => {
     if (!persist || typeof window === 'undefined') return;
-    const saved = window.localStorage.getItem(STORAGE_KEY);
+    const saved = storageGet(STORAGE_KEY);
     if (!saved) return;
     let restored = false;
     try {
@@ -246,7 +237,7 @@ export function AsentumProvider({
     try {
       const addr = await client.connect();
       setAddress(addr);
-      if (persist && typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ address: addr, method: 'extension' }));
+      if (persist) storageSet(STORAGE_KEY, JSON.stringify({ address: addr, method: 'extension' }));
       onConnectRef.current?.(addr);
       setModalOpen(false);
       return addr;
@@ -261,7 +252,7 @@ export function AsentumProvider({
   const disconnect = useCallback(async () => {
     await client.disconnect();
     setAddress(null);
-    if (persist && typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
+    if (persist) storageRemove(STORAGE_KEY);
     onDisconnectRef.current?.();
   }, [client, persist]);
 
@@ -271,9 +262,7 @@ export function AsentumProvider({
     client.useBotSession(p.sessionId);
     setAddress(p.address);
     setError(null);
-    if (persist && typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ address: p.address, method: 'bot', sessionId: p.sessionId }));
-    }
+    if (persist) storageSet(STORAGE_KEY, JSON.stringify({ address: p.address, method: 'bot', sessionId: p.sessionId }));
     onConnectRef.current?.(p.address);
     setModalOpen(false);
   }, [client, persist]);

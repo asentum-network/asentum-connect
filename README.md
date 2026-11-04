@@ -108,8 +108,9 @@ function Swap() {
   dapp point reads at their own node; see "Custom RPC" below).
 - **`<ConnectButton>`** — the button; renders the modal automatically.
 - **`<ConnectModal>`** — the modal on its own, for custom triggers.
-- **`useWallet()`** → `{ address, ase1Address, connected, connecting, error, hasWallet, connect, disconnect, openConnect }`.
-- **`useAsentum()`** → `AsentumClient` (`view`, `call`, `transfer`, `deploy`, `waitReceipt`, `balanceOf`).
+- **`useWallet()`** → `{ address, ase1Address, name, connected, connecting, error, hasWallet, connect, disconnect, openConnect, signMessage, canSignMessage }`. `name` is the account's primary @name (without @) once names are live, else null.
+- **`useNamesActive()`** → `true` once the RPC serves @names (checked every minute). **`usePrimaryName(addr?)`** → `{ name, display, refresh }` (`display` is `"@name"`).
+- **`useAsentum()`** → `AsentumClient` (`view`, `call`, `transfer`, `deploy`, `waitReceipt`, `balanceOf`, `signMessage`, `canSignMessage`, `namesActive`, `resolveName`, `lookupAddress`, `primaryName`, `resolveRecipient`, `nameAvailability`, `registerName`, `setPrimaryName`).
 - **`useContract(addr)`** → `{ address, view(method,args), call(method,args,value) }`.
 - **`useBalance(addr?, pollMs?)`** → `{ balance, loading, refresh }`. `balance` is a wei decimal string.
 - **`useRpc()`** → `{ rpc, defaultRpc, isCustom, allowed, failing, readingFromDefault, setRpc(url), resetRpc(), readFromDefault(on) }`. `setRpc` resolves to `{ ok, height?, error?, checks?, note? }`.
@@ -121,6 +122,53 @@ function Swap() {
   use `@asentum/sdk`, which holds a key directly.
 - **`shortAddress(addr, lead?, tail?)`** and **`DEFAULT_RPC`** — small helpers. `shortAddress` always renders ase1.
 - **`toAse1`, `hexToAse1`, `ase1ToHex`, `isAse1`, `shortAse1`** — ase1 (bech32, HRP `ase`) helpers. Show users `ase1Address` or `toAse1(x)`; never show hex. `address` stays in the form the wallet returned it, for RPC calls. Client methods accept ase1 or hex addresses.
+
+## @names
+
+From node 0.9.0 and the names flag day (block 1,200,000 on chain 1423) an
+account can own a name like `@milkie`. The address stays the account; the
+name points at it. Before the flag day, and on older nodes, every name
+feature is off: `useNamesActive()` is false, `primaryName` returns null and
+`resolveRecipient('@x')` throws `NamesNotActiveError`.
+
+```tsx
+const client = useAsentum();
+const namesLive = useNamesActive();
+
+async function onSend(input: string, amountWei: string) {
+  // "@milkie" or an ase1 address. Throws NameNotFoundError for a free name: show it and stop.
+  const r = await client.resolveRecipient(input);
+  // Show BOTH on your confirm screen: r.name ? `@${r.name}` : '', and r.address (ase1).
+  await client.transfer(input, amountWei); // resolves again right before signing
+}
+```
+
+`transfer('@name', ...)` resolves the name just before it asks the wallet and
+passes the wallet the address plus the name; the wallet checks the name again
+and shows both. Register with `client.registerName('milkie')` (exact fee:
+500 / 100 / 50 ASE for 3 / 4 / 5 characters, 10 ASE for 6 or more; the first
+name becomes the primary one) and switch with `client.setPrimaryName(name)`.
+`<ConnectButton>` shows the primary name instead of the address when there is
+one. Names are rendered as text, always as `@name`.
+
+## Signing a message (wallet sign-in)
+
+```tsx
+const { signMessage, canSignMessage } = useWallet();
+const proof = await signMessage(challenge.message); // { address, publicKey, signature, message }
+await fetch('/api/verify', { method: 'POST', body: JSON.stringify({ token, proof }) });
+```
+
+The wallet shows the full text and your site and the user approves; there is
+no transaction and no fee. The signed bytes are
+`utf8("Asentum Signed Message:\n" + byteLength(message) + "\n" + message)`
+(`signedMessageBytes(message)`), signed with ML-DSA-65. On the server check
+that `BLAKE3(publicKey)[0..20]` is the address and verify the signature
+(`verifyMessage` in `@asentum/sdk` 0.3.0 does both). Needs extension 0.7.0 or
+a Telegram wallet with message signing; older ones throw
+`SignMessageUnsupportedError` (`canSignMessage` is false for an old
+extension). Messages are at most 4096 bytes, without control or
+text-direction characters.
 
 ## How it works
 

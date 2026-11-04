@@ -3,6 +3,7 @@ import { useAsentumContext } from './context';
 import { ConnectModal } from './ConnectModal';
 import { NetworkSettings } from './NetworkSettings';
 import { shortAddress } from './client';
+import { usePrimaryName } from './hooks';
 
 export interface ConnectButtonProps {
   text?: string;      // label when disconnected, default "Connect Wallet"
@@ -19,6 +20,7 @@ export function ConnectButton({
   text = 'Connect Wallet', bg, color = '#fff', border = 'none', radius = 12, menu = true, className, style,
 }: ConnectButtonProps) {
   const c = useAsentumContext();
+  const { display: nameLabel } = usePrimaryName();
   const [open, setOpen] = useState(false);
   // keep the menu open while the user is typing an RPC address
   const editingRef = useRef(false);
@@ -43,7 +45,8 @@ export function ConnectButton({
     );
   }
 
-  const label = shortAddress(c.address);
+  // @name once names are live and the account has one; the address otherwise.
+  const label = nameLabel || shortAddress(c.address);
   const ase1 = c.ase1Address || '';
   if (!menu) {
     return <button className={className} style={base} onClick={() => c.disconnect()}>{label}</button>;
@@ -56,6 +59,7 @@ export function ConnectButton({
       </button>
       {open && (
         <div style={M.menu} onMouseLeave={() => { if (!editingRef.current) setOpen(false); }}>
+          {nameLabel && <div style={M.addr} title={ase1}>{shortAddress(c.address)}</div>}
           <button style={M.item} onClick={() => { navigator.clipboard?.writeText(ase1); setOpen(false); }}>Copy address</button>
           <NetworkSettings onEditingChange={onEditingChange} />
           <button style={{ ...M.item, color: '#ff9db0' }} onClick={() => { c.disconnect(); setOpen(false); }}>Disconnect</button>
@@ -71,5 +75,6 @@ const M: Record<string, React.CSSProperties> = {
     boxShadow: '0 10px 30px rgba(0,0,0,.5)' },
   item: { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
     color: '#e9e9ee', padding: '10px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
+  addr: { padding: '10px 14px 4px', fontSize: 12, color: '#9a9aa6', fontFamily: 'ui-monospace, monospace' },
   dot: { display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: '#f2b36f', marginLeft: 6, verticalAlign: 'middle' },
 };
