@@ -147,3 +147,27 @@ describe('signMessage through the Telegram wallet', () => {
     expect(expired).not.toHaveBeenCalled();
   });
 });
+
+describe('call gas limit', () => {
+  it('passes gasLimit or gas through to the extension and the bot, nothing when absent', async () => {
+    const callContract = vi.fn(async () => ({ txHash: '0x1' }));
+    vi.stubGlobal('window', { asentum: { callContract }, location: { origin: 'https://dapp.test' } });
+    const c = new AsentumClient();
+    await c.call(HEX, 'register', ['milkie'], '10', { gas: 300000 });
+    expect(callContract).toHaveBeenLastCalledWith({ to: HEX, method: 'register', args: ['milkie'], value: '10', gasLimit: '300000' });
+    await c.call(HEX, 'm', [], '0');
+    expect(callContract).toHaveBeenLastCalledWith({ to: HEX, method: 'm', args: [], value: '0' });
+    await c.call(HEX, 'm', [], '0', { gasLimit: 'junk' });
+    expect(callContract).toHaveBeenLastCalledWith({ to: HEX, method: 'm', args: [], value: '0' });
+
+    vi.useFakeTimers();
+    const calls = mockFetch((p) => (p.endsWith('/sign-request') ? { body: { requestId: 'r', status: 'pending' } } : { body: { status: 'approved', txHash: '0x2' } }));
+    const b = new AsentumClient({ botApi: 'http://bot' });
+    b.useBotSession('s');
+    const p = b.call(HEX, 'register', ['milkie'], '10', { gasLimit: 300000n });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(await p).toBe('0x2');
+    expect(JSON.parse(String(calls[0]!.init!.body)).gasLimit).toBe('300000');
+    vi.useRealTimers();
+  });
+});

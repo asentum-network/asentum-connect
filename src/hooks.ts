@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAsentumContext } from './context';
 import type { SetRpcResult } from './context';
-import type { AsentumClient } from './client';
+import type { AsentumClient, CallGasOptions } from './client';
 import type { SignedMessage } from './message';
 
 // wallet state + actions
@@ -96,7 +96,7 @@ export function useContract(address: string) {
   return {
     address,
     view: <T = unknown>(method: string, args: unknown[] = []) => client.view<T>(address, method, args),
-    call: (method: string, args: unknown[] = [], value: string | bigint = '0') => client.call(address, method, args, value),
+    call: (method: string, args: unknown[] = [], value: string | bigint = '0', opts?: CallGasOptions) => client.call(address, method, args, value, opts),
   };
 }
 

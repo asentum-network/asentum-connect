@@ -1,4 +1,5 @@
 export { AsentumClient, DEFAULT_RPC, SessionExpiredError, shortAddress } from './client';
+export type { CallGasOptions } from './client';
 export { hexToAse1, ase1ToHex, ase1ArgsToHex, toAse1, isAse1, shortAse1 } from './ase1';
 export { AsentumProvider, useAsentumContext, RPC_STORAGE_KEY } from './context';
 export type { AsentumProviderProps, AsentumContextValue, SetRpcResult, RpcState } from './context';

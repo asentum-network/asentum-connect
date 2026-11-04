@@ -17,6 +17,12 @@ export const DEFAULT_BOT_API = 'https://wallet.asentum.com';
 // session expired or revoked, extension no longer connected to this site).
 // The provider catches it, clears the stale connection and reopens the
 // connect modal.
+/** Optional gas limit for a contract call (wallets clamp it to their own caps). */
+export interface CallGasOptions {
+  gasLimit?: number | string | bigint;
+  gas?: number | string | bigint;
+}
+
 export class SessionExpiredError extends Error {
   constructor(message = 'Your wallet session has expired. Reconnect your wallet to continue.') {
     super(message);
@@ -273,11 +279,15 @@ export class AsentumClient {
   // writes — routed through the active signer (bot session or extension)
   // `opts.gasLimit` is a hint for wallets that take one (extension 0.7.0+,
   // the Telegram wallet); older wallets use their own default.
-  async call(contract: string, method: string, args: unknown[] = [], value: string | bigint = '0', opts: { gasLimit?: number } = {}): Promise<string> {
+  // `opts.gas` is an alias of `opts.gasLimit`. Without either, nothing is sent
+  // and the wallet uses its default, as before.
+  async call(contract: string, method: string, args: unknown[] = [], value: string | bigint = '0', opts: CallGasOptions = {}): Promise<string> {
     contract = hexAddr(contract);
     // ase1 inside args becomes 0x: contracts compare against hex msg.sender.
     args = ase1ArgsToHex(args);
-    const gas = opts.gasLimit ? { gasLimit: String(opts.gasLimit) } : {};
+    const limit = opts.gasLimit ?? opts.gas;
+    const n = limit == null ? NaN : Number(limit);
+    const gas = Number.isSafeInteger(n) && n > 0 ? { gasLimit: String(n) } : {};
     if (this.mode === 'bot') {
       const { txHash } = await this.botSign({ type: 'contract_call', to: contract, method, args, value: String(value), ...gas });
       return txHash;

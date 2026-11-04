@@ -111,7 +111,7 @@ function Swap() {
 - **`useWallet()`** → `{ address, ase1Address, name, connected, connecting, error, hasWallet, connect, disconnect, openConnect, signMessage, canSignMessage }`. `name` is the account's primary @name (without @) once names are live, else null.
 - **`useNamesActive()`** → `true` once the RPC serves @names (checked every minute). **`usePrimaryName(addr?)`** → `{ name, display, refresh }` (`display` is `"@name"`).
 - **`useAsentum()`** → `AsentumClient` (`view`, `call`, `transfer`, `deploy`, `waitReceipt`, `balanceOf`, `signMessage`, `canSignMessage`, `namesActive`, `resolveName`, `lookupAddress`, `primaryName`, `resolveRecipient`, `nameAvailability`, `registerName`, `setPrimaryName`).
-- **`useContract(addr)`** → `{ address, view(method,args), call(method,args,value) }`.
+- **`useContract(addr)`** → `{ address, view(method,args), call(method,args,value,opts?) }`. `opts` is `{ gasLimit }` (or `{ gas }`), the same as the 5th argument of `client.call`: passed to the extension (0.7.0+) and the Telegram wallet, which clamp it to their own caps; older wallets ignore it. Leave it out for the wallet's default.
 - **`useBalance(addr?, pollMs?)`** → `{ balance, loading, refresh }`. `balance` is a wei decimal string.
 - **`useRpc()`** → `{ rpc, defaultRpc, isCustom, allowed, failing, readingFromDefault, setRpc(url), resetRpc(), readFromDefault(on) }`. `setRpc` resolves to `{ ok, height?, error?, checks?, note? }`.
 - **`<NetworkSettings />`**: the Network row on its own, for custom menus.
