@@ -68,6 +68,51 @@ describe('normalizeRpcUrl', () => {
     expect(sameRpcUrl('HTTPS://Testnet.Asentum.com', DEFAULT_RPC_URL)).toBe(true);
     expect(sameRpcUrl('https://other.example.com', DEFAULT_RPC_URL)).toBe(false);
   });
+  it('rejects cloud metadata, link-local, loopback and internal hosts under https (SSRF protection)', () => {
+    expect(normalizeRpcUrl('https://169.254.169.254/latest/meta-data/')).toEqual({
+      ok: false,
+      error: 'Cloud metadata and link-local addresses are not allowed.',
+    });
+    expect(normalizeRpcUrl('http://169.254.169.254/latest/meta-data/')).toEqual({
+      ok: false,
+      error: 'Cloud metadata and link-local addresses are not allowed.',
+    });
+    expect(normalizeRpcUrl('https://[fe80::1]:8545')).toEqual({
+      ok: false,
+      error: 'Cloud metadata and link-local addresses are not allowed.',
+    });
+
+    expect(normalizeRpcUrl('https://127.0.0.1:2375/')).toEqual({
+      ok: false,
+      error: 'Use http:// for a node on your own machine (localhost / loopback).',
+    });
+    expect(normalizeRpcUrl('https://[::1]:8545/')).toEqual({
+      ok: false,
+      error: 'Use http:// for a node on your own machine (localhost / loopback).',
+    });
+
+    expect(normalizeRpcUrl('https://kubernetes.default.svc/')).toEqual({
+      ok: false,
+      error: 'Internal and cluster-local hostnames are not allowed.',
+    });
+    expect(normalizeRpcUrl('https://metadata.google.internal/')).toEqual({
+      ok: false,
+      error: 'Internal and cluster-local hostnames are not allowed.',
+    });
+    expect(normalizeRpcUrl('https://vault/')).toEqual({
+      ok: false,
+      error: 'Internal and cluster-local hostnames are not allowed.',
+    });
+
+    expect(normalizeRpcUrl('https://192.168.1.1:8545/')).toEqual({
+      ok: false,
+      error: 'Private network addresses cannot be used with https://.',
+    });
+    expect(normalizeRpcUrl('https://10.0.0.1:8545/')).toEqual({
+      ok: false,
+      error: 'Private network addresses cannot be used with https://.',
+    });
+  });
 });
 
 describe('response parsing', () => {

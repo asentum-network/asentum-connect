@@ -56,6 +56,27 @@ function isLoopbackHost(hostname: string): boolean {
   return h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
 }
 
+function isMetadataOrLinkLocalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 169 && b === 254) return true;
+    if (a === 0) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    return false;
+  }
+  return /^fe[89ab][0-9a-f]{0,2}:/i.test(h) || h === '::';
+}
+
+function isInternalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (isLoopbackHost(hostname) || isPrivateLanHost(hostname)) return false;
+  if (h.includes(':')) return false;
+  if (!h.includes('.')) return true;
+  return h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.svc') || h.endsWith('.cluster.local');
+}
+
 function isPrivateLanHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
@@ -64,7 +85,6 @@ function isPrivateLanHost(hostname: string): boolean {
     if (a === 10) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true;
     return false;
   }
   // IPv6 unique local addresses (fc00::/7).
@@ -103,6 +123,13 @@ export function normalizeRpcUrl(input: string, opts: NormalizeOptions = {}): Nor
     return { ok: false, error: 'Please remove the part after ? or # from the address.' };
   }
 
+  if (isMetadataOrLinkLocalHost(parsed.hostname)) {
+    return { ok: false, error: 'Cloud metadata and link-local addresses are not allowed.' };
+  }
+  if (isInternalHost(parsed.hostname)) {
+    return { ok: false, error: 'Internal and cluster-local hostnames are not allowed.' };
+  }
+
   const insecure = parsed.protocol === 'http:';
   let note: string | undefined;
   if (insecure) {
@@ -118,6 +145,13 @@ export function normalizeRpcUrl(input: string, opts: NormalizeOptions = {}): Nor
       note = 'Plain http only works on your local network, and pages served over https cannot reach it. Use https if you can.';
     } else {
       return { ok: false, error: 'Use https:// for this address. Plain http is only allowed for a node on your own machine or local network.' };
+    }
+  } else {
+    if (isLoopbackHost(parsed.hostname)) {
+      return { ok: false, error: 'Use http:// for a node on your own machine (localhost / loopback).' };
+    }
+    if (isPrivateLanHost(parsed.hostname)) {
+      return { ok: false, error: 'Private network addresses cannot be used with https://.' };
     }
   }
 
