@@ -1,6 +1,6 @@
 {
   "name": "@asentum/connect",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Drop-in wallet connect for AsentumChain dapps — <ConnectButton /> + hooks (useWallet, useAsentum). Zero CSS imports, zero heavy deps.",
   "license": "MIT",
   "repository": {
@@ -29,6 +29,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "sideEffects": false,

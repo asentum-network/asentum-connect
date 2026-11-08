@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RPC_URL,
+  isLocalHost,
   formatHeight,
   isNetworkError,
   metadataMatchesChain,
@@ -56,8 +57,15 @@ describe('normalizeRpcUrl', () => {
       if (r.ok) expect(r.note).toBeTruthy();
     }
     expect(normalizeRpcUrl('http://172.32.0.1:8545').ok).toBe(false);
+    // link-local / cloud metadata is not a LAN node
+    expect(normalizeRpcUrl('http://169.254.169.254').ok).toBe(false);
+    expect(normalizeRpcUrl('http://169.254.1.2:8545').ok).toBe(false);
     expect(normalizeRpcUrl('http://rpc.example.com').ok).toBe(false);
     expect(normalizeRpcUrl('http://8.8.8.8:8545').ok).toBe(false);
+  });
+  it('isLocalHost: loopback and private LAN yes, link-local 169.254/16 no', () => {
+    for (const h of ['localhost', '127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.0.9']) expect(isLocalHost(h), h).toBe(true);
+    for (const h of ['169.254.169.254', '169.254.0.1', '8.8.8.8', 'example.com']) expect(isLocalHost(h), h).toBe(false);
   });
   it('can refuse LAN http (extension mode) but still allow localhost', () => {
     expect(normalizeRpcUrl('http://192.168.1.20:8545', { allowLanHttp: false }).ok).toBe(false);

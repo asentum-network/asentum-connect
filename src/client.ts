@@ -12,6 +12,10 @@ const hexAddr = (a: string): string => ase1ToHex(a) ?? a;
 
 export const DEFAULT_RPC = 'https://testnet.asentum.com';
 export const DEFAULT_BOT_API = 'https://wallet.asentum.com';
+/** A Telegram sign request is given up after this long (the bot expires it after 5 minutes too). */
+export const BOT_SIGN_TIMEOUT_MS = 5 * 60 * 1000;
+/** How often a pending Telegram sign request is polled. */
+export const BOT_SIGN_POLL_MS = 2000;
 
 // Thrown when the wallet session behind a signed call is gone (Telegram
 // session expired or revoked, extension no longer connected to this site).
@@ -190,17 +194,44 @@ export class AsentumClient {
       throw new Error(`bot sign-request failed: HTTP ${cr.status} ${text}`);
     }
     const { requestId } = await cr.json();
+    const url = `${this.botApi}/api/sessions/${this.botSessionId}/sign-requests/${requestId}`;
     return new Promise((resolve, reject) => {
-      const iv = setInterval(async () => {
+      const deadline = Date.now() + BOT_SIGN_TIMEOUT_MS;
+      let done = false;
+      let inFlight = false;
+      // Every way out clears the interval, so a poller never outlives its promise.
+      const finish = (fn: () => void) => {
+        if (done) return;
+        done = true;
+        clearInterval(iv);
+        fn();
+      };
+      const tick = async () => {
+        if (done) return;
+        if (Date.now() >= deadline) {
+          finish(() => reject(new Error('Request expired after 5 minutes. Approve it sooner next time.')));
+          return;
+        }
+        if (inFlight) return; // the previous poll is still waiting for an answer
+        inFlight = true;
         try {
-          const r = await fetch(`${this.botApi}/api/sessions/${this.botSessionId}/sign-requests/${requestId}`);
-          if (!r.ok) return; // transient
+          const r = await fetch(url);
+          if (r.status === 404 || r.status === 410) {
+            finish(() => reject(new Error('Sign request no longer exists. Reconnect your wallet.')));
+            return;
+          }
+          if (!r.ok) return; // transient (5xx, 429): keep polling until the deadline
           const s = await r.json();
-          if (s.status === 'approved') { clearInterval(iv); resolve({ ...s, txHash: s.txHash, contractAddress: s.contractAddress }); }
-          else if (s.status === 'rejected') { clearInterval(iv); reject(new Error(s.error || 'request rejected in wallet')); }
-          else if (s.status === 'expired') { clearInterval(iv); reject(new Error('Request expired after 5 minutes. Approve it sooner next time.')); }
-        } catch { /* transient — keep polling */ }
-      }, 2000);
+          if (s.status === 'approved') finish(() => resolve({ ...s, txHash: s.txHash, contractAddress: s.contractAddress }));
+          else if (s.status === 'rejected') finish(() => reject(new Error(s.error || 'request rejected in wallet')));
+          else if (s.status === 'expired') finish(() => reject(new Error('Request expired after 5 minutes. Approve it sooner next time.')));
+        } catch {
+          /* transient: keep polling until the deadline */
+        } finally {
+          inFlight = false;
+        }
+      };
+      const iv = setInterval(tick, BOT_SIGN_POLL_MS);
     });
   }
 

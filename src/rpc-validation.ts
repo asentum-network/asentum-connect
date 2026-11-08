@@ -64,7 +64,8 @@ function isPrivateLanHost(hostname: string): boolean {
     if (a === 10) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true;
+    // 169.254.0.0/16 is link-local (cloud metadata lives at 169.254.169.254),
+    // not a LAN node: it gets no http exception.
     return false;
   }
   // IPv6 unique local addresses (fc00::/7).
